@@ -74,6 +74,20 @@ WEAK_STARTS = {
     "ya",
 }
 
+TRANSCRIPT_REPLACEMENTS = {
+    r"\binkam\b": "income",
+    r"\bin kam\b": "income",
+    r"\bcoin mass\b": "coin emas",
+    r"\bkoin mass\b": "koin emas",
+    r"\bfiat namis\b": "Vietnamese",
+    r"\bfilipin\b": "Filipina",
+    r"\bsilvernya\b": "silver-nya",
+    r"\bdolarnya\b": "dolar-nya",
+    r"\bsoftware- and wealth\b": "sovereign wealth",
+    r"\bsoftware and wealth\b": "sovereign wealth",
+    r"\bterperakap\b": "terperangkap",
+}
+
 
 def run(command: list[str], cwd: Path | None = None) -> None:
     process = subprocess.run(command, cwd=cwd, text=True)
@@ -103,6 +117,14 @@ def load_json(path: Path):
 def save_json(path: Path, payload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def clean_transcript_text(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    cleaned = cleaned.replace(" ,", ",").replace(" .", ".").replace(" ?", "?").replace(" !", "!")
+    for pattern, replacement in TRANSCRIPT_REPLACEMENTS.items():
+        cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
 
 
 def fetch_metadata(url: str) -> dict:
@@ -186,7 +208,14 @@ def extract_audio(video_path: Path, audio_path: Path, force: bool = False, limit
 
 def transcribe(audio_path: Path, transcript_path: Path, model_name: str, language: str, force: bool = False) -> list[TranscriptSegment]:
     if transcript_path.exists() and not force:
-        return [TranscriptSegment(**item) for item in load_json(transcript_path)]
+        return [
+            TranscriptSegment(
+                start=float(item["start"]),
+                end=float(item["end"]),
+                text=clean_transcript_text(item["text"]),
+            )
+            for item in load_json(transcript_path)
+        ]
 
     from faster_whisper import WhisperModel
 
@@ -202,7 +231,7 @@ def transcribe(audio_path: Path, transcript_path: Path, model_name: str, languag
 
     rows: list[TranscriptSegment] = []
     for segment in segments:
-        text = re.sub(r"\s+", " ", segment.text).strip()
+        text = clean_transcript_text(segment.text)
         if text:
             rows.append(TranscriptSegment(float(segment.start), float(segment.end), text))
 
@@ -524,6 +553,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--language", default="id", help="Transcription language code")
     parser.add_argument("--output", default="outputs", help="Output directory")
     parser.add_argument("--analyze-seconds", type=float, help="Only transcribe the first N seconds; useful for quick tests")
+    parser.add_argument("--review-only", action="store_true", help="Stop after generating clip candidates")
+    parser.add_argument("--export-indexes", help="Comma-separated candidate indexes to export, e.g. 1,3,5")
     parser.add_argument("--no-burn-subtitles", action="store_true", help="Create SRT files but do not burn subtitles into MP4")
     parser.add_argument("--force", action="store_true", help="Redo download, audio extraction, and transcription")
     return parser.parse_args()
@@ -572,6 +603,21 @@ def main() -> int:
 
     save_json(work_dir / f"candidates{cache_suffix}.json", [asdict(item) for item in candidates])
     print_candidates(candidates)
+
+    if args.review_only:
+        console.print("[green]Review candidates ready.[/green]")
+        return 0
+
+    if args.export_indexes:
+        selected_indexes = {
+            int(part.strip())
+            for part in args.export_indexes.split(",")
+            if part.strip().isdigit()
+        }
+        candidates = [item for item in candidates if item.index in selected_indexes]
+        if not candidates:
+            console.print("[red]No matching candidate indexes to export.[/red]")
+            return 1
 
     console.print("[bold]Exporting vertical clips...[/bold]")
     clips_dir = work_dir / "clips"

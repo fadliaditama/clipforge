@@ -13,7 +13,7 @@ import {
   Settings2,
   XCircle,
 } from "lucide-react";
-import { createJob, getJob, getJobs, getOutputUrl } from "../../lib/apiClient";
+import { createJob, exportJob, getJob, getJobs, getOutputUrl } from "../../lib/apiClient";
 import type { ClipJob, JobStatus } from "../../types/clip.type";
 
 const statusCopy: Record<JobStatus, string> = {
@@ -39,6 +39,13 @@ function clipTitle(name: string) {
   return name.replace(/\.mp4$/i, "").replace(/^clip_\d+_/, "").replace(/-/g, " ");
 }
 
+function formatTime(seconds: number) {
+  const whole = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(whole / 60);
+  const rest = whole % 60;
+  return `${minutes}:${rest.toString().padStart(2, "0")}`;
+}
+
 export const ClipperWorkspace = () => {
   const [url, setUrl] = useState("");
   const [top, setTop] = useState(5);
@@ -46,9 +53,12 @@ export const ClipperWorkspace = () => {
   const [maxDuration, setMaxDuration] = useState(180);
   const [analyzeSeconds, setAnalyzeSeconds] = useState("");
   const [force, setForce] = useState(false);
+  const [reviewOnly, setReviewOnly] = useState(true);
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
+  const [selectedCandidates, setSelectedCandidates] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState("");
 
   const activeJobId = job?.id;
@@ -78,6 +88,11 @@ export const ClipperWorkspace = () => {
 
   const latestLogs = useMemo(() => job?.logs.slice(-10) ?? [], [job]);
 
+  useEffect(() => {
+    if (!job?.candidates.length || selectedCandidates.length) return;
+    setSelectedCandidates(job.candidates.map((candidate) => candidate.index));
+  }, [job?.id, job?.candidates.length, selectedCandidates.length]);
+
   async function handleStartJob() {
     setError("");
     if (!url.trim()) {
@@ -97,13 +112,30 @@ export const ClipperWorkspace = () => {
         analyze_seconds: analyzeSeconds ? Number(analyzeSeconds) : null,
         burn_subtitles: true,
         force,
+        review_only: reviewOnly,
       });
       setJob(nextJob);
+      setSelectedCandidates([]);
       await loadJobs();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Failed to create job");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleExportSelected() {
+    if (!job || !selectedCandidates.length) return;
+    setError("");
+    setIsExporting(true);
+    try {
+      const nextJob = await exportJob(job.id, selectedCandidates);
+      setJob(nextJob);
+      await loadJobs();
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "Failed to export selected candidates");
+    } finally {
+      setIsExporting(false);
     }
   }
 
@@ -182,6 +214,10 @@ export const ClipperWorkspace = () => {
               <input type="checkbox" checked={force} onChange={(event) => setForce(event.target.checked)} />
               Regenerate cached files
             </label>
+            <label className="check">
+              <input type="checkbox" checked={reviewOnly} onChange={(event) => setReviewOnly(event.target.checked)} />
+              Review before export
+            </label>
           </div>
 
           {error ? <p className="error">{error}</p> : null}
@@ -217,6 +253,55 @@ export const ClipperWorkspace = () => {
           )}
         </section>
       </section>
+
+      {job?.candidates.length ? (
+        <section className="review">
+          <div className="sectionHeader">
+            <h2>Review candidates</h2>
+            <span>{job.candidates.length} found</span>
+          </div>
+          <div className="candidateList">
+            {job.candidates.map((candidate) => {
+              const checked = selectedCandidates.includes(candidate.index);
+              return (
+                <article className="candidateCard" key={candidate.index}>
+                  <label className="candidateCheck">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        setSelectedCandidates((current) =>
+                          event.target.checked
+                            ? [...new Set([...current, candidate.index])].sort((a, b) => a - b)
+                            : current.filter((index) => index !== candidate.index),
+                        );
+                      }}
+                    />
+                    <strong>Clip {candidate.index}</strong>
+                  </label>
+                  <div className="candidateMeta">
+                    <span>{formatTime(candidate.start)}-{formatTime(candidate.end)}</span>
+                    <span>{Math.round(candidate.duration)}s</span>
+                    <span>score {candidate.score}</span>
+                  </div>
+                  <h3>{candidate.title}</h3>
+                  <p className="candidateReason">{candidate.reason}</p>
+                  <p className="candidateText">{candidate.text}</p>
+                </article>
+              );
+            })}
+          </div>
+          <button
+            className="primary exportButton"
+            type="button"
+            disabled={isBusy || isExporting || !selectedCandidates.length}
+            onClick={handleExportSelected}
+          >
+            {isExporting || isBusy ? <Loader2 className="spin" size={18} /> : <Scissors size={18} />}
+            Export selected
+          </button>
+        </section>
+      ) : null}
 
       <section className="results">
         <div className="sectionHeader">
@@ -260,10 +345,18 @@ export const ClipperWorkspace = () => {
           {jobs.map((item) => {
             const Icon = statusIcon[item.status];
             return (
-              <button className="jobRow" type="button" key={item.id} onClick={() => setJob(item)}>
+              <button
+                className="jobRow"
+                type="button"
+                key={item.id}
+                onClick={() => {
+                  setSelectedCandidates([]);
+                  setJob(item);
+                }}
+              >
                 <Icon className={item.status === "running" ? "spin" : ""} size={17} />
                 <span>{statusCopy[item.status]}</span>
-                <strong>{item.clips.length} clips</strong>
+                <strong>{item.clips.length ? `${item.clips.length} clips` : `${item.candidates.length} candidates`}</strong>
               </button>
             );
           })}

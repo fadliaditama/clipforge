@@ -6,6 +6,8 @@ __pycache__/
 
 .env
 .env.*
+jobs.json
+jobs.json.tmp
 
 *.mp4
 *.wav

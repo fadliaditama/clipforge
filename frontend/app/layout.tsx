@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "yt-clip",
   description: "Local YouTube clip generator",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({

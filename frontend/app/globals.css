@@ -231,6 +231,7 @@ h2 {
 }
 
 .results,
+.review,
 .history {
   margin-top: 22px;
 }
@@ -305,6 +306,74 @@ h2 {
   place-items: center;
   min-height: 170px;
   color: var(--muted);
+}
+
+.candidateList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.candidateCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 280px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.candidateCheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.candidateCheck input {
+  width: 16px;
+  height: 16px;
+}
+
+.candidateMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.candidateMeta span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.candidateCard h3 {
+  font-size: 15px;
+  line-height: 1.35;
+  text-transform: capitalize;
+}
+
+.candidateReason {
+  color: var(--accent-2);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.candidateText {
+  max-height: 116px;
+  overflow: auto;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.exportButton {
+  width: min(260px, 100%);
+  margin-top: 14px;
 }
 
 .jobList {

@@ -6,6 +6,17 @@ export type ClipFile = {
   size_bytes: number;
 };
 
+export type ClipCandidate = {
+  index: number;
+  start: number;
+  end: number;
+  duration: number;
+  score: number;
+  title: string;
+  reason: string;
+  text: string;
+};
+
 export type ClipJob = {
   id: string;
   status: JobStatus;
@@ -13,6 +24,7 @@ export type ClipJob = {
   updated_at: string;
   logs: string[];
   clips: ClipFile[];
+  candidates: ClipCandidate[];
   error: string | null;
   request: {
     url: string;
@@ -24,6 +36,7 @@ export type ClipJob = {
     analyze_seconds: number | null;
     burn_subtitles: boolean;
     force: boolean;
+    review_only: boolean;
   };
 };
 
@@ -37,4 +50,5 @@ export type CreateClipJobInput = {
   analyze_seconds: number | null;
   burn_subtitles: boolean;
   force: boolean;
+  review_only: boolean;
 };

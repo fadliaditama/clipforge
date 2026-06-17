@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import threading
@@ -18,6 +19,7 @@ from pydantic import BaseModel, Field
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUTS_DIR = BASE_DIR / "outputs"
+JOBS_PATH = BASE_DIR / "jobs.json"
 
 
 class ClipJobRequest(BaseModel):
@@ -30,6 +32,18 @@ class ClipJobRequest(BaseModel):
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
     burn_subtitles: bool = True
     force: bool = False
+    review_only: bool = False
+
+
+class ClipCandidate(BaseModel):
+    index: int
+    start: float
+    end: float
+    duration: float
+    score: int
+    title: str
+    reason: str
+    text: str
 
 
 class ClipFile(BaseModel):
@@ -46,7 +60,12 @@ class ClipJob(BaseModel):
     updated_at: str
     logs: list[str] = []
     clips: list[ClipFile] = []
+    candidates: list[ClipCandidate] = []
     error: str | None = None
+
+
+class ExportRequest(BaseModel):
+    indexes: list[int] = Field(min_length=1)
 
 
 app = FastAPI(title="yt-clip API", version="0.1.0")
@@ -61,12 +80,38 @@ app.add_middleware(
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/outputs", StaticFiles(directory=OUTPUTS_DIR), name="outputs")
 
-jobs: dict[str, ClipJob] = {}
-jobs_lock = threading.Lock()
-
-
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def load_jobs() -> dict[str, ClipJob]:
+    if not JOBS_PATH.exists():
+        return {}
+
+    payload = json.loads(JOBS_PATH.read_text(encoding="utf-8"))
+    loaded: dict[str, ClipJob] = {}
+    for item in payload:
+        job = ClipJob(**item)
+        if job.status in {"queued", "running"}:
+            data = job.model_dump()
+            data["status"] = "failed"
+            data["updated_at"] = now_iso()
+            data["error"] = "Backend restarted before this job finished"
+            job = ClipJob(**data)
+        loaded[job.id] = job
+    return loaded
+
+
+def save_jobs_unlocked() -> None:
+    jobs_list = sorted(jobs.values(), key=lambda job: job.created_at, reverse=True)
+    payload = [job.model_dump() for job in jobs_list]
+    temp_path = JOBS_PATH.with_suffix(".json.tmp")
+    temp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    temp_path.replace(JOBS_PATH)
+
+
+jobs: dict[str, ClipJob] = load_jobs()
+jobs_lock = threading.Lock()
 
 
 def clip_url(path: Path) -> str:
@@ -90,6 +135,20 @@ def discover_clips(started_at: float) -> list[ClipFile]:
     return clips
 
 
+def discover_candidates(started_at: float) -> list[ClipCandidate]:
+    candidate_files = [
+        path
+        for path in OUTPUTS_DIR.rglob("candidates*.json")
+        if path.stat().st_mtime + 1 >= started_at
+    ]
+    if not candidate_files:
+        return []
+
+    latest = max(candidate_files, key=lambda path: path.stat().st_mtime)
+    payload = json.loads(latest.read_text(encoding="utf-8"))
+    return [ClipCandidate(**item) for item in payload]
+
+
 def set_job(job_id: str, **updates) -> None:
     with jobs_lock:
         job = jobs[job_id]
@@ -97,15 +156,10 @@ def set_job(job_id: str, **updates) -> None:
         data.update(updates)
         data["updated_at"] = now_iso()
         jobs[job_id] = ClipJob(**data)
+        save_jobs_unlocked()
 
 
-def run_job(job_id: str) -> None:
-    with jobs_lock:
-        request = jobs[job_id].request
-
-    started_at = time.time()
-    set_job(job_id, status="running")
-
+def build_clipper_command(request: ClipJobRequest, export_indexes: list[int] | None = None) -> list[str]:
     command = [
         sys.executable,
         "clipper.py",
@@ -126,8 +180,22 @@ def run_job(job_id: str) -> None:
         command.extend(["--analyze-seconds", str(request.analyze_seconds)])
     if not request.burn_subtitles:
         command.append("--no-burn-subtitles")
-    if request.force:
+    if request.force and not export_indexes:
         command.append("--force")
+    if request.review_only and not export_indexes:
+        command.append("--review-only")
+    if export_indexes:
+        command.extend(["--export-indexes", ",".join(str(index) for index in export_indexes)])
+    return command
+
+
+def run_job(job_id: str, export_indexes: list[int] | None = None) -> None:
+    with jobs_lock:
+        request = jobs[job_id].request
+
+    started_at = time.time()
+    set_job(job_id, status="running", error=None)
+    command = build_clipper_command(request, export_indexes)
 
     process = subprocess.Popen(
         command,
@@ -150,13 +218,20 @@ def run_job(job_id: str) -> None:
 
     code = process.wait()
     clips = discover_clips(started_at)
+    candidates = discover_candidates(started_at)
     if code == 0:
-        set_job(job_id, status="completed", clips=clips, logs=logs[-120:])
+        updates = {"status": "completed", "logs": logs[-120:]}
+        if clips:
+            updates["clips"] = clips
+        if candidates:
+            updates["candidates"] = candidates
+        set_job(job_id, **updates)
     else:
         set_job(
             job_id,
             status="failed",
             clips=clips,
+            candidates=candidates,
             logs=logs[-120:],
             error=f"clipper.py exited with code {code}",
         )
@@ -182,10 +257,32 @@ def create_job(request: ClipJobRequest) -> ClipJob:
     )
     with jobs_lock:
         jobs[job_id] = job
+        save_jobs_unlocked()
 
     thread = threading.Thread(target=run_job, args=(job_id,), daemon=True)
     thread.start()
     return job
+
+
+@app.post("/api/jobs/{job_id}/export", response_model=ClipJob)
+def export_job(job_id: str, request: ExportRequest) -> ClipJob:
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.status in {"queued", "running"}:
+            raise HTTPException(status_code=409, detail="Job is still running")
+        data = job.model_dump()
+        data["status"] = "queued"
+        data["error"] = None
+        data["updated_at"] = now_iso()
+        jobs[job_id] = ClipJob(**data)
+        save_jobs_unlocked()
+        queued_job = jobs[job_id]
+
+    thread = threading.Thread(target=run_job, args=(job_id, request.indexes), daemon=True)
+    thread.start()
+    return queued_job
 
 
 @app.get("/api/jobs", response_model=list[ClipJob])

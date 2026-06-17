@@ -34,4 +34,19 @@ export const createJob = async (input: CreateClipJobInput) => {
   return (await response.json()) as ClipJob;
 };
 
+export const exportJob = async (jobId: string, indexes: number[]) => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ indexes }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(detail || "Failed to export selected candidates");
+  }
+
+  return (await response.json()) as ClipJob;
+};
+
 export const getOutputUrl = (path: string) => `${API_BASE}${path}`;
