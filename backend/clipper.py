@@ -8,7 +8,7 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Literal
 
 import imageio_ffmpeg
 from rich.console import Console
@@ -74,6 +74,8 @@ WEAK_STARTS = {
     "ya",
 }
 
+CropMode = Literal["center", "person"]
+
 TRANSCRIPT_REPLACEMENTS = {
     r"\binkam\b": "income",
     r"\bin kam\b": "income",
@@ -86,6 +88,15 @@ TRANSCRIPT_REPLACEMENTS = {
     r"\bsoftware- and wealth\b": "sovereign wealth",
     r"\bsoftware and wealth\b": "sovereign wealth",
     r"\bterperakap\b": "terperangkap",
+    r"\bhana kan\b": "menggunakan",
+    r"\bpengatahuan\b": "pengetahuan",
+    r"\bbarang-barang\b": "bareng-bareng",
+    r"\bdimasa\b": "di masa",
+    r"\bribuk\b": "ribu",
+    r"\bseraksud\b": "seratus",
+    r"\bseris\b": "series",
+    r"\bmelawangkan\b": "meluangkan",
+    r"\bmenyerahanakan\b": "menyederhanakan",
 }
 
 
@@ -97,6 +108,112 @@ def run(command: list[str], cwd: Path | None = None) -> None:
 
 def ffmpeg_path() -> str:
     return imageio_ffmpeg.get_ffmpeg_exe()
+
+
+def make_even(value: float, minimum: int) -> int:
+    rounded = max(minimum, int(round(value)))
+    return rounded if rounded % 2 == 0 else rounded + 1
+
+
+def clamp_even(value: float, minimum: int, maximum: int) -> int:
+    bounded = max(minimum, min(maximum, int(round(value))))
+    if bounded % 2:
+        bounded -= 1
+    return max(minimum, min(maximum, bounded))
+
+
+def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float, tuple[int, int]] | None:
+    try:
+        import cv2
+    except Exception as exc:
+        console.print(f"[yellow]Person crop unavailable:[/yellow] {exc}")
+        return None
+
+    capture = cv2.VideoCapture(str(video_path.resolve()))
+    if not capture.isOpened():
+        return None
+
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if width <= 0 or height <= 0:
+        capture.release()
+        return None
+
+    duration = max(0.1, clip.end - clip.start)
+    sample_count = min(12, max(4, int(duration // 8)))
+    if sample_count == 1:
+        offsets = [duration / 2]
+    else:
+        step = duration / (sample_count + 1)
+        offsets = [step * (index + 1) for index in range(sample_count)]
+
+    hog = cv2.HOGDescriptor()
+    hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
+    face_cascade = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"))
+
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for offset in offsets:
+        capture.set(cv2.CAP_PROP_POS_MSEC, (clip.start + offset) * 1000)
+        ok, frame = capture.read()
+        if not ok:
+            continue
+
+        resize_scale = min(1.0, 720 / max(frame.shape[:2]))
+        if resize_scale < 1:
+            resized = cv2.resize(frame, None, fx=resize_scale, fy=resize_scale, interpolation=cv2.INTER_AREA)
+        else:
+            resized = frame
+
+        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        detections: list[tuple[float, float, float]] = []
+
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
+        for x, _, w, _ in faces:
+            center_x = (x + w / 2) / resize_scale
+            detections.append((center_x, w / resize_scale, 1.35))
+
+        people, weights = hog.detectMultiScale(
+            resized,
+            winStride=(8, 8),
+            padding=(16, 16),
+            scale=1.05,
+        )
+        for index, (x, _, w, _) in enumerate(people):
+            confidence = float(weights[index]) if len(weights) > index else 1.0
+            center_x = (x + w / 2) / resize_scale
+            detections.append((center_x, w / resize_scale, max(0.25, confidence)))
+
+        if detections:
+            center_x, box_width, confidence = max(detections, key=lambda item: item[1] * item[2])
+            weight = box_width * confidence
+            weighted_sum += (center_x / width) * weight
+            total_weight += weight
+
+    capture.release()
+    if total_weight <= 0:
+        return None
+    return weighted_sum / total_weight, (width, height)
+
+
+def vertical_crop_filter(video_path: Path, clip: ClipCandidate, crop_mode: CropMode) -> str:
+    center_filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"
+    if crop_mode == "center":
+        return center_filter
+
+    focus = detect_person_focus_x(video_path, clip)
+    if focus is None:
+        console.print(f"[yellow]No person detected for clip {clip.index}; using center crop.[/yellow]")
+        return center_filter
+
+    focus_x, (source_width, source_height) = focus
+    scale = max(1080 / source_width, 1920 / source_height)
+    scaled_width = make_even(source_width * scale, 1080)
+    scaled_height = make_even(source_height * scale, 1920)
+    crop_x = clamp_even((focus_x * scaled_width) - 540, 0, scaled_width - 1080)
+    crop_y = clamp_even((scaled_height - 1920) / 2, 0, scaled_height - 1920)
+    console.print(f"[green]Person crop[/green] clip {clip.index}: focus x={focus_x:.2f}, crop x={crop_x}")
+    return f"scale={scaled_width}:{scaled_height},crop=1080:1920:{crop_x}:{crop_y},setsar=1"
 
 
 def seconds_to_stamp(seconds: float, srt: bool = False) -> str:
@@ -360,7 +477,13 @@ def segments_for_clip(segments: Iterable[TranscriptSegment], clip: ClipCandidate
 
 
 def wrap_subtitle(text: str, max_chars: int = 32, max_lines: int = 2) -> str:
+    chunks = split_subtitle_text(text, max_chars=max_chars, max_lines=max_lines)
+    return chunks[0] if chunks else ""
+
+
+def split_subtitle_text(text: str, max_chars: int = 32, max_lines: int = 2) -> list[str]:
     words = text.split()
+    chunks: list[str] = []
     lines: list[str] = []
     current: list[str] = []
 
@@ -370,33 +493,53 @@ def wrap_subtitle(text: str, max_chars: int = 32, max_lines: int = 2) -> str:
             lines.append(" ".join(current))
             current = [word]
             if len(lines) == max_lines:
-                break
+                chunks.append("\n".join(lines))
+                lines = []
         else:
             current.append(word)
 
     if current and len(lines) < max_lines:
         lines.append(" ".join(current))
+    if lines:
+        chunks.append("\n".join(lines))
 
-    return "\n".join(lines)
+    return chunks
 
 
-def write_srt(path: Path, segments: list[TranscriptSegment], offset: float) -> None:
+def write_srt(path: Path, segments: list[TranscriptSegment], offset: float, clip_duration: float) -> None:
     lines: list[str] = []
-    for idx, item in enumerate(segments, start=1):
+    cue_index = 1
+    for item in segments:
         start = max(0, item.start - offset)
-        end = max(start + 0.2, item.end - offset)
-        lines.extend(
-            [
-                str(idx),
-                f"{seconds_to_stamp(start, srt=True)} --> {seconds_to_stamp(end, srt=True)}",
-                wrap_subtitle(item.text),
-                "",
-            ]
-        )
+        end = min(clip_duration, max(start + 0.2, item.end - offset))
+        if start >= clip_duration or end - start < 0.45:
+            continue
+
+        chunks = split_subtitle_text(item.text)
+        chunk_duration = (end - start) / max(1, len(chunks))
+        for chunk_idx, chunk in enumerate(chunks):
+            chunk_start = start + chunk_duration * chunk_idx
+            chunk_end = end if chunk_idx == len(chunks) - 1 else start + chunk_duration * (chunk_idx + 1)
+            lines.extend(
+                [
+                    str(cue_index),
+                    f"{seconds_to_stamp(chunk_start, srt=True)} --> {seconds_to_stamp(chunk_end, srt=True)}",
+                    chunk,
+                    "",
+                ]
+            )
+            cue_index += 1
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def export_clip(video_path: Path, clip: ClipCandidate, clip_segments: list[TranscriptSegment], clips_dir: Path, burn_subtitles: bool) -> Path:
+def export_clip(
+    video_path: Path,
+    clip: ClipCandidate,
+    clip_segments: list[TranscriptSegment],
+    clips_dir: Path,
+    burn_subtitles: bool,
+    crop_mode: CropMode,
+) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = f"clip_{clip.index:02}_{slugify(clip.title)[:42] or 'auto'}"
     srt_path = clips_dir / f"{base_name}.srt"
@@ -405,10 +548,11 @@ def export_clip(video_path: Path, clip: ClipCandidate, clip_segments: list[Trans
     temp_video_path = clips_dir / f"{base_name}.video_tmp.mp4"
     temp_audio_path = clips_dir / f"{base_name}.audio_tmp.wav"
 
-    write_srt(srt_path, clip_segments, clip.start)
+    duration = clip.end - clip.start
+    write_srt(srt_path, clip_segments, clip.start, duration)
     save_json(json_path, asdict(clip))
 
-    vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"
+    vf = vertical_crop_filter(video_path, clip, crop_mode)
     if burn_subtitles and clip_segments:
         style = (
             "FontName=Arial,FontSize=5,PrimaryColour=&H00FFFFFF,"
@@ -417,7 +561,6 @@ def export_clip(video_path: Path, clip: ClipCandidate, clip_segments: list[Trans
         )
         vf = f"{vf},subtitles='{srt_path.name}':force_style='{style}'"
 
-    duration = clip.end - clip.start
     common_input = [
         ffmpeg_path(),
         "-hide_banner",
@@ -556,6 +699,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--review-only", action="store_true", help="Stop after generating clip candidates")
     parser.add_argument("--export-indexes", help="Comma-separated candidate indexes to export, e.g. 1,3,5")
     parser.add_argument("--no-burn-subtitles", action="store_true", help="Create SRT files but do not burn subtitles into MP4")
+    parser.add_argument(
+        "--crop-mode",
+        choices=["center", "person"],
+        default="center",
+        help="Use center crop or shift the vertical crop toward a detected person",
+    )
     parser.add_argument("--force", action="store_true", help="Redo download, audio extraction, and transcription")
     return parser.parse_args()
 
@@ -624,7 +773,16 @@ def main() -> int:
     exported: list[Path] = []
     for candidate in candidates:
         clip_segments = segments_for_clip(transcript, candidate)
-        exported.append(export_clip(final_video_path, candidate, clip_segments, clips_dir, not args.no_burn_subtitles))
+        exported.append(
+            export_clip(
+                final_video_path,
+                candidate,
+                clip_segments,
+                clips_dir,
+                not args.no_burn_subtitles,
+                args.crop_mode,
+            )
+        )
 
     console.print("[green]Done.[/green] Exported:")
     for path in exported:

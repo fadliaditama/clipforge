@@ -48,13 +48,18 @@ a {
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 40px;
-  padding-bottom: 24px;
+  margin: -32px -24px 40px;
+  padding: 32px 24px 24px;
+  background: rgba(248, 250, 252, 0.92);
   border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
 }
 
 .topbar-brand {
@@ -186,6 +191,61 @@ h2 {
   gap: 16px;
 }
 
+.segmentedField {
+  display: grid;
+  gap: 8px;
+}
+
+.segmentedField > span {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.segmentedControl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  background: #EEF2F7;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.segmentedControl button {
+  min-height: 38px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.segmentedControl button:hover {
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--text-primary);
+}
+
+.segmentedControl button:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
+
+.segmentedControl button.active {
+  background: linear-gradient(180deg, #60A5FA 0%, #3B82F6 100%);
+  border-color: #3B82F6;
+  color: #FFFFFF;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.18);
+}
+
+.segmentedControl button.active:hover {
+  background: linear-gradient(180deg, #3B82F6 0%, var(--primary) 100%);
+  border-color: var(--primary);
+  color: #FFFFFF;
+}
+
 .optionRow {
   flex-wrap: wrap;
   gap: 20px;
@@ -263,7 +323,16 @@ h2 {
 }
 
 .statusPanel {
+  display: flex;
+  flex-direction: column;
   min-height: 300px;
+}
+
+.activityContent {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .jobMeta {
@@ -283,7 +352,8 @@ h2 {
 }
 
 .logBox {
-  height: 240px;
+  flex: 1;
+  min-height: 240px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -434,6 +504,11 @@ h2 {
   font-size: 14px;
   max-width: 400px;
   line-height: 1.5;
+}
+
+.activityEmptyState {
+  flex: 1;
+  min-height: 0;
 }
 
 .candidateList {
@@ -644,6 +719,11 @@ h2 {
 @media (max-width: 920px) {
   .shell {
     padding: 24px 16px;
+  }
+
+  .topbar {
+    margin: -24px -16px 32px;
+    padding: 24px 16px 18px;
   }
 
   .workspace {

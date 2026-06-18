@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { createJob, getJob, getJobs, getOutputUrl, deleteJobs } from "../../lib/apiClient";
-import type { ClipJob, JobStatus } from "../../types/clip.type";
+import type { ClipJob, CropMode, JobStatus } from "../../types/clip.type";
 
 const statusCopy: Record<JobStatus, string> = {
   queued: "Queued",
@@ -79,6 +79,7 @@ export const ClipperWorkspace = () => {
   const [minDuration, setMinDuration] = useState(35);
   const [maxDuration, setMaxDuration] = useState(180);
   const [analyzeSeconds, setAnalyzeSeconds] = useState("");
+  const [cropMode, setCropMode] = useState<CropMode>("person");
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -125,10 +126,11 @@ export const ClipperWorkspace = () => {
         top,
         min_duration: minDuration,
         max_duration: maxDuration,
-        model: "Systran/faster-whisper-base",
+        model: "Systran/faster-whisper-small",
         language: "id",
         analyze_seconds: analyzeSeconds ? Number(analyzeSeconds) : null,
         burn_subtitles: true,
+        crop_mode: cropMode,
       });
 
       const nextJob = await toast.promise(jobPromise, {
@@ -255,6 +257,26 @@ export const ClipperWorkspace = () => {
             </label>
           </div>
 
+          <div className="segmentedField">
+            <span>Mode Crop</span>
+            <div className="segmentedControl" role="group" aria-label="Mode crop video">
+              <button
+                className={cropMode === "center" ? "active" : ""}
+                type="button"
+                onClick={() => setCropMode("center")}
+              >
+                Center
+              </button>
+              <button
+                className={cropMode === "person" ? "active" : ""}
+                type="button"
+                onClick={() => setCropMode("person")}
+              >
+                Follow Person
+              </button>
+            </div>
+          </div>
+
           {error ? <p className="error">{error}</p> : null}
 
           <button className="primary" type="button" disabled={isSubmitting || isBusy || !url.trim()} onClick={handleStartJob}>
@@ -270,11 +292,12 @@ export const ClipperWorkspace = () => {
           </div>
 
           {job ? (
-            <>
+            <div className="activityContent">
               <div className="jobMeta">
                 <span>{job.request.top} klip target</span>
                 <span>{job.request.min_duration}s - {job.request.max_duration}s</span>
                 <span>{job.request.analyze_seconds ? `Test: ${job.request.analyze_seconds}s` : "Full video"}</span>
+                <span>{job.request.crop_mode === "person" ? "Follow person" : "Center crop"}</span>
               </div>
 
               <div className="logBox">
@@ -282,9 +305,9 @@ export const ClipperWorkspace = () => {
               </div>
 
               {job.error ? <p className="error" style={{marginTop: "16px"}}>{job.error}</p> : null}
-            </>
+            </div>
           ) : (
-            <div className="emptyState">
+            <div className="emptyState activityEmptyState">
               <Activity size={32} style={{ marginBottom: "12px", opacity: 0.5 }} />
               <p>Belum ada proses berjalan.</p>
               <p style={{ fontSize: "13px", marginTop: "4px" }}>Masukkan link YouTube, lalu klik <strong>Mulai Potong Video</strong> untuk memulai.</p>

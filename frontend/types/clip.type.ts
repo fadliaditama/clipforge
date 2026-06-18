@@ -1,4 +1,5 @@
 export type JobStatus = "queued" | "running" | "completed" | "failed";
+export type CropMode = "center" | "person";
 
 export type ClipFile = {
   name: string;
@@ -35,6 +36,7 @@ export type ClipJob = {
     language: string;
     analyze_seconds: number | null;
     burn_subtitles: boolean;
+    crop_mode: CropMode;
   };
 };
 
@@ -47,4 +49,5 @@ export type CreateClipJobInput = {
   language: string;
   analyze_seconds: number | null;
   burn_subtitles: boolean;
+  crop_mode: CropMode;
 };
