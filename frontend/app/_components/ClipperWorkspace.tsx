@@ -141,9 +141,9 @@ export const ClipperWorkspace = () => {
     toast((t) => (
       <div className="confirmToast">
         <div className="confirmToast-copy">
-          <strong>Hapus seluruh riwayat proses?</strong>
+          <strong>Hapus seluruh riwayat dan output?</strong>
           <p>
-          Video klip yang ada mungkin tidak bisa diakses lagi dari sini.
+          Semua job dan file video di folder outputs akan dihapus.
           </p>
         </div>
         <div className="confirmToast-actions">

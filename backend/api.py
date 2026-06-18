@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -111,6 +112,23 @@ def save_jobs_unlocked() -> None:
     temp_path = JOBS_PATH.with_suffix(".json.tmp")
     temp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     temp_path.replace(JOBS_PATH)
+
+
+def clear_outputs_dir() -> int:
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    root = OUTPUTS_DIR.resolve()
+    removed = 0
+    for item in OUTPUTS_DIR.iterdir():
+        resolved = item.resolve()
+        if root not in resolved.parents:
+            raise RuntimeError(f"Refusing to delete path outside outputs: {resolved}")
+
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+        removed += 1
+    return removed
 
 
 jobs: dict[str, ClipJob] = load_jobs()
@@ -318,11 +336,12 @@ def list_jobs() -> list[ClipJob]:
 
 
 @app.delete("/api/jobs")
-def delete_all_jobs() -> dict[str, str]:
+def delete_all_jobs() -> dict[str, str | int]:
     with jobs_lock:
         jobs.clear()
         save_jobs_unlocked()
-    return {"status": "ok"}
+        removed_outputs = clear_outputs_dir()
+    return {"status": "ok", "removed_outputs": removed_outputs}
 
 
 @app.get("/api/jobs/{job_id}", response_model=ClipJob)

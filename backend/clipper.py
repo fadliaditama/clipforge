@@ -75,6 +75,7 @@ WEAK_STARTS = {
 }
 
 CropMode = Literal["center", "person"]
+YUNET_MODEL_PATH = Path(__file__).resolve().parent / "models" / "face_detection_yunet_2023mar.onnx"
 
 TRANSCRIPT_REPLACEMENTS = {
     r"\binkam\b": "income",
@@ -150,9 +151,23 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
     hog = cv2.HOGDescriptor()
     hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
     face_cascade = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"))
+    profile_cascade = cv2.CascadeClassifier(str(Path(cv2.data.haarcascades) / "haarcascade_profileface.xml"))
+    yunet = None
+    if YUNET_MODEL_PATH.exists() and hasattr(cv2, "FaceDetectorYN_create"):
+        yunet = cv2.FaceDetectorYN_create(
+            str(YUNET_MODEL_PATH),
+            "",
+            (320, 320),
+            0.35,
+            0.3,
+            5000,
+        )
 
-    weighted_sum = 0.0
-    total_weight = 0.0
+    face_weighted_sum = 0.0
+    face_total_weight = 0.0
+    person_weighted_sum = 0.0
+    person_total_weight = 0.0
+
     for offset in offsets:
         capture.set(cv2.CAP_PROP_POS_MSEC, (clip.start + offset) * 1000)
         ok, frame = capture.read()
@@ -166,12 +181,42 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
             resized = frame
 
         gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-        detections: list[tuple[float, float, float]] = []
+        face_detections: list[tuple[float, float, float]] = []
+        person_detections: list[tuple[float, float, float]] = []
+
+        if yunet is not None:
+            resized_height, resized_width = resized.shape[:2]
+            yunet.setInputSize((resized_width, resized_height))
+            _, faces = yunet.detect(resized)
+            if faces is not None:
+                for face in faces:
+                    x, _, w, h = face[:4]
+                    confidence = float(face[-1])
+                    center_x = (x + w / 2) / resize_scale
+                    face_detections.append((center_x, max(w, h) / resize_scale, confidence * 3.0))
 
         faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(36, 36))
-        for x, _, w, _ in faces:
+        for x, y, w, h in faces:
             center_x = (x + w / 2) / resize_scale
-            detections.append((center_x, w / resize_scale, 1.35))
+            face_detections.append((center_x, max(w, h) / resize_scale, 2.0))
+
+        profiles = profile_cascade.detectMultiScale(gray, scaleFactor=1.08, minNeighbors=4, minSize=(34, 34))
+        for x, y, w, h in profiles:
+            center_x = (x + w / 2) / resize_scale
+            face_detections.append((center_x, max(w, h) / resize_scale, 1.8))
+
+        flipped_gray = cv2.flip(gray, 1)
+        flipped_profiles = profile_cascade.detectMultiScale(
+            flipped_gray,
+            scaleFactor=1.08,
+            minNeighbors=4,
+            minSize=(34, 34),
+        )
+        resized_width = resized.shape[1]
+        for x, y, w, h in flipped_profiles:
+            original_x = resized_width - x - w
+            center_x = (original_x + w / 2) / resize_scale
+            face_detections.append((center_x, max(w, h) / resize_scale, 1.8))
 
         people, weights = hog.detectMultiScale(
             resized,
@@ -182,18 +227,26 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
         for index, (x, _, w, _) in enumerate(people):
             confidence = float(weights[index]) if len(weights) > index else 1.0
             center_x = (x + w / 2) / resize_scale
-            detections.append((center_x, w / resize_scale, max(0.25, confidence)))
+            person_detections.append((center_x, w / resize_scale, max(0.25, confidence)))
 
-        if detections:
-            center_x, box_width, confidence = max(detections, key=lambda item: item[1] * item[2])
+        if face_detections:
+            center_x, box_width, confidence = max(face_detections, key=lambda item: item[1] * item[2])
             weight = box_width * confidence
-            weighted_sum += (center_x / width) * weight
-            total_weight += weight
+            face_weighted_sum += (center_x / width) * weight
+            face_total_weight += weight
+        elif person_detections:
+            center_x, box_width, confidence = max(person_detections, key=lambda item: item[1] * item[2])
+            weight = box_width * confidence
+            person_weighted_sum += (center_x / width) * weight
+            person_total_weight += weight
 
     capture.release()
-    if total_weight <= 0:
+    if face_total_weight > 0:
+        return face_weighted_sum / face_total_weight, (width, height)
+    if person_total_weight > 0:
+        return person_weighted_sum / person_total_weight, (width, height)
+    if face_total_weight <= 0 and person_total_weight <= 0:
         return None
-    return weighted_sum / total_weight, (width, height)
 
 
 def vertical_crop_filter(video_path: Path, clip: ClipCandidate, crop_mode: CropMode) -> str:
