@@ -29,7 +29,7 @@ export type ClipJob = {
   error: string | null;
   request: {
     url: string;
-    top: number;
+    top: number | null;
     min_duration: number;
     max_duration: number;
     model: string;
@@ -42,12 +42,12 @@ export type ClipJob = {
 
 export type CreateClipJobInput = {
   url: string;
-  top: number;
+  top?: number;
   min_duration: number;
   max_duration: number;
   model: string;
   language: string;
-  analyze_seconds: number | null;
+  analyze_seconds?: number | null;
   burn_subtitles: boolean;
   crop_mode: CropMode;
 };

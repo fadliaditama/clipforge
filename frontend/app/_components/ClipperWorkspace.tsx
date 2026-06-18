@@ -42,13 +42,6 @@ function clipTitle(name: string) {
   return name.replace(/\.mp4$/i, "").replace(/^clip_\d+_/, "").replace(/-/g, " ");
 }
 
-function formatTime(seconds: number) {
-  const whole = Math.max(0, Math.round(seconds));
-  const minutes = Math.floor(whole / 60);
-  const rest = whole % 60;
-  return `${minutes}:${rest.toString().padStart(2, "0")}`;
-}
-
 async function handleDownload(url: string, filename: string) {
   const downloadPromise = async () => {
     const response = await fetch(url);
@@ -75,10 +68,8 @@ async function handleDownload(url: string, filename: string) {
 
 export const ClipperWorkspace = () => {
   const [url, setUrl] = useState("");
-  const [top, setTop] = useState(5);
   const [minDuration, setMinDuration] = useState(35);
   const [maxDuration, setMaxDuration] = useState(180);
-  const [analyzeSeconds, setAnalyzeSeconds] = useState("");
   const [cropMode, setCropMode] = useState<CropMode>("person");
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
@@ -123,12 +114,10 @@ export const ClipperWorkspace = () => {
     try {
       const jobPromise = createJob({
         url,
-        top,
         min_duration: minDuration,
         max_duration: maxDuration,
         model: "Systran/faster-whisper-small",
         language: "id",
-        analyze_seconds: analyzeSeconds ? Number(analyzeSeconds) : null,
         burn_subtitles: true,
         crop_mode: cropMode,
       });
@@ -221,10 +210,6 @@ export const ClipperWorkspace = () => {
 
           <div className="gridFields">
             <label className="field">
-              <span>Jumlah Klip</span>
-              <input min={1} max={12} type="number" value={top} onChange={(event) => setTop(Number(event.target.value))} />
-            </label>
-            <label className="field">
               <span>Durasi Minimum</span>
               <input
                 min={5}
@@ -242,17 +227,6 @@ export const ClipperWorkspace = () => {
                 type="number"
                 value={maxDuration}
                 onChange={(event) => setMaxDuration(Number(event.target.value))}
-              />
-            </label>
-            <label className="field">
-              <span>Mode Analisis (Detik)</span>
-              <input
-                min={10}
-                max={7200}
-                type="number"
-                value={analyzeSeconds}
-                onChange={(event) => setAnalyzeSeconds(event.target.value)}
-                placeholder="Full video"
               />
             </label>
           </div>
@@ -294,7 +268,7 @@ export const ClipperWorkspace = () => {
           {job ? (
             <div className="activityContent">
               <div className="jobMeta">
-                <span>{job.request.top} klip target</span>
+                <span>{job.request.top ?? "Auto"} klip target</span>
                 <span>{job.request.min_duration}s - {job.request.max_duration}s</span>
                 <span>{job.request.analyze_seconds ? `Test: ${job.request.analyze_seconds}s` : "Full video"}</span>
                 <span>{job.request.crop_mode === "person" ? "Follow person" : "Center crop"}</span>

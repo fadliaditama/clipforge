@@ -6,6 +6,7 @@ import sys
 import threading
 import time
 import uuid
+from math import ceil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -15,16 +16,23 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from yt_dlp import YoutubeDL
 
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUTS_DIR = BASE_DIR / "outputs"
 JOBS_PATH = BASE_DIR / "jobs.json"
+SECONDS_PER_TARGET_CLIP = 360
+MIN_AUTO_CLIPS = 2
+MAX_AUTO_CLIPS = 8
+FULL_ANALYSIS_LIMIT_SECONDS = 30 * 60
+LONG_VIDEO_ANALYSIS_RATIO = 0.55
+MAX_AUTO_ANALYSIS_SECONDS = 60 * 60
 
 
 class ClipJobRequest(BaseModel):
     url: str = Field(min_length=8)
-    top: int = Field(default=5, ge=1, le=12)
+    top: int | None = Field(default=None, ge=1, le=12)
     min_duration: float = Field(default=35, ge=5, le=600)
     max_duration: float = Field(default=180, ge=10, le=600)
     model: str = "Systran/faster-whisper-small"
@@ -154,13 +162,58 @@ def set_job(job_id: str, **updates) -> None:
         save_jobs_unlocked()
 
 
+def clamp(value: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, value))
+
+
+def fetch_video_duration(url: str) -> float | None:
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "skip_download": True,
+    }
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception:
+        return None
+
+    duration = info.get("duration") if isinstance(info, dict) else None
+    return float(duration) if duration else None
+
+
+def choose_auto_top(duration: float | None) -> int:
+    if not duration:
+        return MIN_AUTO_CLIPS + 3
+    return clamp(ceil(duration / SECONDS_PER_TARGET_CLIP), MIN_AUTO_CLIPS, MAX_AUTO_CLIPS)
+
+
+def choose_auto_analyze_seconds(duration: float | None) -> float | None:
+    if not duration or duration <= FULL_ANALYSIS_LIMIT_SECONDS:
+        return None
+    return min(MAX_AUTO_ANALYSIS_SECONDS, max(FULL_ANALYSIS_LIMIT_SECONDS, duration * LONG_VIDEO_ANALYSIS_RATIO))
+
+
+def normalize_job_request(request: ClipJobRequest) -> ClipJobRequest:
+    duration = fetch_video_duration(request.url)
+    data = request.model_dump()
+
+    if request.top is None:
+        data["top"] = choose_auto_top(duration)
+    if request.analyze_seconds is None:
+        data["analyze_seconds"] = choose_auto_analyze_seconds(duration)
+
+    return ClipJobRequest(**data)
+
+
 def build_clipper_command(request: ClipJobRequest) -> list[str]:
     command = [
         sys.executable,
         "clipper.py",
         request.url,
         "--top",
-        str(request.top),
+        str(request.top or choose_auto_top(None)),
         "--min",
         str(request.min_duration),
         "--max",
@@ -237,6 +290,7 @@ def create_job(request: ClipJobRequest) -> ClipJob:
     if request.max_duration <= request.min_duration:
         raise HTTPException(status_code=400, detail="max_duration must be greater than min_duration")
 
+    request = normalize_job_request(request)
     job_id = uuid.uuid4().hex
     job = ClipJob(
         id=job_id,
