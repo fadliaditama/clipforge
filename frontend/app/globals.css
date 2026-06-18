@@ -384,7 +384,8 @@ h2 {
   border-top: 1px solid var(--border);
 }
 
-.clipActions a {
+.clipActions a,
+.clipActions button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -394,14 +395,23 @@ h2 {
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
 }
 
-.clipActions a:hover {
+.clipActions a:hover,
+.clipActions button:hover {
   background: var(--bg);
   color: var(--primary);
 }
 
-.clipActions a + a {
+.clipActions a + a,
+.clipActions a + button,
+.clipActions button + a,
+.clipActions button + button {
   border-left: 1px solid var(--border);
 }
 
@@ -561,6 +571,66 @@ h2 {
   padding: 12px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid #FECACA;
+}
+
+.confirmToast {
+  display: grid;
+  gap: 14px;
+  max-width: min(360px, calc(100vw - 32px));
+}
+
+.confirmToast-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.confirmToast-copy strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.confirmToast-copy p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.confirmToast-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ghostButton,
+.dangerButton {
+  min-height: 34px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 12px;
+}
+
+.ghostButton {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.ghostButton:hover {
+  background: var(--bg);
+}
+
+.dangerButton {
+  background: var(--danger);
+  border: 1px solid var(--danger);
+  color: #FFFFFF;
+}
+
+.dangerButton:hover {
+  filter: brightness(0.95);
 }
 
 .spin {

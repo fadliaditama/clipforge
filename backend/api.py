@@ -31,8 +31,6 @@ class ClipJobRequest(BaseModel):
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
     burn_subtitles: bool = True
-    force: bool = False
-    review_only: bool = False
 
 
 class ClipCandidate(BaseModel):
@@ -62,10 +60,6 @@ class ClipJob(BaseModel):
     clips: list[ClipFile] = []
     candidates: list[ClipCandidate] = []
     error: str | None = None
-
-
-class ExportRequest(BaseModel):
-    indexes: list[int] = Field(min_length=1)
 
 
 app = FastAPI(title="yt-clip API", version="0.1.0")
@@ -159,7 +153,7 @@ def set_job(job_id: str, **updates) -> None:
         save_jobs_unlocked()
 
 
-def build_clipper_command(request: ClipJobRequest, export_indexes: list[int] | None = None) -> list[str]:
+def build_clipper_command(request: ClipJobRequest) -> list[str]:
     command = [
         sys.executable,
         "clipper.py",
@@ -180,22 +174,16 @@ def build_clipper_command(request: ClipJobRequest, export_indexes: list[int] | N
         command.extend(["--analyze-seconds", str(request.analyze_seconds)])
     if not request.burn_subtitles:
         command.append("--no-burn-subtitles")
-    if request.force and not export_indexes:
-        command.append("--force")
-    if request.review_only and not export_indexes:
-        command.append("--review-only")
-    if export_indexes:
-        command.extend(["--export-indexes", ",".join(str(index) for index in export_indexes)])
     return command
 
 
-def run_job(job_id: str, export_indexes: list[int] | None = None) -> None:
+def run_job(job_id: str) -> None:
     with jobs_lock:
         request = jobs[job_id].request
 
     started_at = time.time()
     set_job(job_id, status="running", error=None)
-    command = build_clipper_command(request, export_indexes)
+    command = build_clipper_command(request)
 
     process = subprocess.Popen(
         command,
@@ -264,31 +252,21 @@ def create_job(request: ClipJobRequest) -> ClipJob:
     return job
 
 
-@app.post("/api/jobs/{job_id}/export", response_model=ClipJob)
-def export_job(job_id: str, request: ExportRequest) -> ClipJob:
-    with jobs_lock:
-        job = jobs.get(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
-        if job.status in {"queued", "running"}:
-            raise HTTPException(status_code=409, detail="Job is still running")
-        data = job.model_dump()
-        data["status"] = "queued"
-        data["error"] = None
-        data["updated_at"] = now_iso()
-        jobs[job_id] = ClipJob(**data)
-        save_jobs_unlocked()
-        queued_job = jobs[job_id]
 
-    thread = threading.Thread(target=run_job, args=(job_id, request.indexes), daemon=True)
-    thread.start()
-    return queued_job
 
 
 @app.get("/api/jobs", response_model=list[ClipJob])
 def list_jobs() -> list[ClipJob]:
     with jobs_lock:
         return sorted(jobs.values(), key=lambda job: job.created_at, reverse=True)
+
+
+@app.delete("/api/jobs")
+def delete_all_jobs() -> dict[str, str]:
+    with jobs_lock:
+        jobs.clear()
+        save_jobs_unlocked()
+    return {"status": "ok"}
 
 
 @app.get("/api/jobs/{job_id}", response_model=ClipJob)

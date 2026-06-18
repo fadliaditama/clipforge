@@ -35,8 +35,6 @@ export type ClipJob = {
     language: string;
     analyze_seconds: number | null;
     burn_subtitles: boolean;
-    force: boolean;
-    review_only: boolean;
   };
 };
 
@@ -49,6 +47,4 @@ export type CreateClipJobInput = {
   language: string;
   analyze_seconds: number | null;
   burn_subtitles: boolean;
-  force: boolean;
-  review_only: boolean;
 };

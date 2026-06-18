@@ -10,13 +10,13 @@ import {
   Play,
   RefreshCw,
   Scissors,
-  Settings2,
   XCircle,
   Activity,
-  History,
-  Video
+  Video,
+  Trash2,
 } from "lucide-react";
-import { createJob, exportJob, getJob, getJobs, getOutputUrl } from "../../lib/apiClient";
+import toast from "react-hot-toast";
+import { createJob, getJob, getJobs, getOutputUrl, deleteJobs } from "../../lib/apiClient";
 import type { ClipJob, JobStatus } from "../../types/clip.type";
 
 const statusCopy: Record<JobStatus, string> = {
@@ -49,19 +49,39 @@ function formatTime(seconds: number) {
   return `${minutes}:${rest.toString().padStart(2, "0")}`;
 }
 
+async function handleDownload(url: string, filename: string) {
+  const downloadPromise = async () => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Gagal mengunduh file");
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+  };
+
+  toast.promise(downloadPromise(), {
+    loading: 'Mengunduh klip...',
+    success: 'Klip berhasil diunduh!',
+    error: 'Gagal mengunduh klip',
+  }).catch(() => {
+    window.open(url, "_blank");
+  });
+}
+
 export const ClipperWorkspace = () => {
   const [url, setUrl] = useState("");
   const [top, setTop] = useState(5);
   const [minDuration, setMinDuration] = useState(35);
   const [maxDuration, setMaxDuration] = useState(180);
   const [analyzeSeconds, setAnalyzeSeconds] = useState("");
-  const [force, setForce] = useState(false);
-  const [reviewOnly, setReviewOnly] = useState(true);
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
-  const [selectedCandidates, setSelectedCandidates] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState("");
 
   const activeJobId = job?.id;
@@ -91,11 +111,6 @@ export const ClipperWorkspace = () => {
 
   const latestLogs = useMemo(() => job?.logs.slice(-10) ?? [], [job]);
 
-  useEffect(() => {
-    if (!job?.candidates.length || selectedCandidates.length) return;
-    setSelectedCandidates(job.candidates.map((candidate) => candidate.index));
-  }, [job?.id, job?.candidates.length, selectedCandidates.length]);
-
   async function handleStartJob() {
     setError("");
     if (!url.trim()) {
@@ -105,7 +120,7 @@ export const ClipperWorkspace = () => {
     setIsSubmitting(true);
 
     try {
-      const nextJob = await createJob({
+      const jobPromise = createJob({
         url,
         top,
         min_duration: minDuration,
@@ -114,11 +129,15 @@ export const ClipperWorkspace = () => {
         language: "id",
         analyze_seconds: analyzeSeconds ? Number(analyzeSeconds) : null,
         burn_subtitles: true,
-        force,
-        review_only: reviewOnly,
       });
+
+      const nextJob = await toast.promise(jobPromise, {
+        loading: 'Mempersiapkan proses pemotongan...',
+        success: 'Proses pemotongan berhasil dimulai!',
+        error: 'Gagal memulai proses pemotongan',
+      });
+
       setJob(nextJob);
-      setSelectedCandidates([]);
       await loadJobs();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Gagal memulai proses.");
@@ -127,19 +146,43 @@ export const ClipperWorkspace = () => {
     }
   }
 
-  async function handleExportSelected() {
-    if (!job || !selectedCandidates.length) return;
-    setError("");
-    setIsExporting(true);
-    try {
-      const nextJob = await exportJob(job.id, selectedCandidates);
-      setJob(nextJob);
-      await loadJobs();
-    } catch (exportError) {
-      setError(exportError instanceof Error ? exportError.message : "Gagal mengekspor klip yang dipilih.");
-    } finally {
-      setIsExporting(false);
-    }
+  function handleDeleteAll() {
+    toast((t) => (
+      <div className="confirmToast">
+        <div className="confirmToast-copy">
+          <strong>Hapus seluruh riwayat proses?</strong>
+          <p>
+          Video klip yang ada mungkin tidak bisa diakses lagi dari sini.
+          </p>
+        </div>
+        <div className="confirmToast-actions">
+          <button className="ghostButton" type="button" onClick={() => toast.dismiss(t.id)}>
+            Batal
+          </button>
+          <button
+            className="dangerButton"
+            type="button"
+            onClick={async () => {
+              toast.dismiss(t.id);
+              try {
+                const deletePromise = deleteJobs();
+                await toast.promise(deletePromise, {
+                  loading: 'Menghapus riwayat...',
+                  success: 'Seluruh riwayat berhasil dihapus!',
+                  error: 'Gagal menghapus riwayat',
+                });
+                setJob(null);
+                await loadJobs();
+              } catch (err) {
+                // error handled by toast
+              }
+            }}
+          >
+            Hapus Semua
+          </button>
+        </div>
+      </div>
+    ), { duration: Infinity });
   }
 
   const StatusIcon = job ? statusIcon[job.status] : Activity;
@@ -212,17 +255,6 @@ export const ClipperWorkspace = () => {
             </label>
           </div>
 
-          <div className="optionRow">
-            <label className="check">
-              <input type="checkbox" checked={force} onChange={(event) => setForce(event.target.checked)} />
-              Buat ulang cache
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={reviewOnly} onChange={(event) => setReviewOnly(event.target.checked)} />
-              Review sebelum export
-            </label>
-          </div>
-
           {error ? <p className="error">{error}</p> : null}
 
           <button className="primary" type="button" disabled={isSubmitting || isBusy || !url.trim()} onClick={handleStartJob}>
@@ -261,55 +293,6 @@ export const ClipperWorkspace = () => {
         </section>
       </section>
 
-      {job?.candidates.length ? (
-        <section className="review">
-          <div className="sectionHeader">
-            <h2>Review Kandidat Klip</h2>
-            <span className="sectionBadge">{job.candidates.length} klip ditemukan</span>
-          </div>
-          <div className="candidateList">
-            {job.candidates.map((candidate) => {
-              const checked = selectedCandidates.includes(candidate.index);
-              return (
-                <article className="candidateCard" key={candidate.index} style={{ borderColor: checked ? "var(--primary)" : "" }}>
-                  <label className="candidateCheck">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(event) => {
-                        setSelectedCandidates((current) =>
-                          event.target.checked
-                            ? [...new Set([...current, candidate.index])].sort((a, b) => a - b)
-                            : current.filter((index) => index !== candidate.index),
-                        );
-                      }}
-                    />
-                    Klip {candidate.index}
-                  </label>
-                  <div className="candidateMeta">
-                    <span>{formatTime(candidate.start)} - {formatTime(candidate.end)}</span>
-                    <span>{Math.round(candidate.duration)}s</span>
-                    <span style={{ color: "var(--primary)" }}>Skor: {candidate.score}</span>
-                  </div>
-                  <h3>{candidate.title}</h3>
-                  <p className="candidateReason">{candidate.reason}</p>
-                  <p className="candidateText">{candidate.text}</p>
-                </article>
-              );
-            })}
-          </div>
-          <button
-            className="primary exportButton"
-            type="button"
-            disabled={isBusy || isExporting || !selectedCandidates.length}
-            onClick={handleExportSelected}
-          >
-            {isExporting || isBusy ? <Loader2 className="spin" size={18} /> : <Scissors size={18} />}
-            Export Klip Terpilih
-          </button>
-        </section>
-      ) : null}
-
       <section className="results">
         <div className="sectionHeader">
           <h2>Klip Siap Digunakan</h2>
@@ -330,10 +313,10 @@ export const ClipperWorkspace = () => {
                     <ExternalLink size={16} />
                     Buka
                   </a>
-                  <a href={getOutputUrl(clip.url)} download>
+                  <button type="button" onClick={() => handleDownload(getOutputUrl(clip.url), clip.name)}>
                     <Download size={16} />
                     Unduh
-                  </a>
+                  </button>
                 </div>
               </article>
             ))}
@@ -349,7 +332,20 @@ export const ClipperWorkspace = () => {
       <section className="history">
         <div className="sectionHeader">
           <h2>Riwayat Proses</h2>
-          <span className="sectionBadge">{jobs.length} total</span>
+          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <span className="sectionBadge">{jobs.length} total</span>
+            {jobs.length > 0 && (
+              <button
+                type="button"
+                onClick={handleDeleteAll}
+                className="iconButton"
+                title="Hapus Semua Riwayat"
+                style={{ width: "32px", height: "32px", color: "var(--danger)" }}
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+          </div>
         </div>
         <div className="jobList">
           {jobs.map((item) => {
@@ -360,7 +356,6 @@ export const ClipperWorkspace = () => {
                 type="button"
                 key={item.id}
                 onClick={() => {
-                  setSelectedCandidates([]);
                   setJob(item);
                 }}
               >

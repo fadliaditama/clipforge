@@ -11,6 +11,13 @@ export const getJobs = async () => {
   return (await response.json()) as ClipJob[];
 };
 
+export const deleteJobs = async () => {
+  const response = await fetch(`${CLIENT_API_BASE}/api/jobs`, { method: "DELETE" });
+  if (!response.ok) {
+    throw new Error("Failed to delete jobs");
+  }
+};
+
 export const getJob = async (jobId: string) => {
   const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}`, { cache: "no-store" });
   if (!response.ok) {
@@ -29,21 +36,6 @@ export const createJob = async (input: CreateClipJobInput) => {
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(detail || "Failed to create job");
-  }
-
-  return (await response.json()) as ClipJob;
-};
-
-export const exportJob = async (jobId: string, indexes: number[]) => {
-  const response = await fetch(`${CLIENT_API_BASE}/api/jobs/${jobId}/export`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ indexes }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || "Failed to export selected candidates");
   }
 
   return (await response.json()) as ClipJob;
