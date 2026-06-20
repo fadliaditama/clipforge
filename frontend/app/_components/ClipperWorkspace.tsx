@@ -15,6 +15,8 @@ import {
   Activity,
   Video,
   Trash2,
+  Heart,
+  Coffee,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { createJob, getJob, getJobs, getOutputUrl, deleteJobs } from "../../lib/apiClient";
@@ -378,6 +380,19 @@ export const ClipperWorkspace = () => {
           })}
         </div>
       </section>
+
+      <footer className="siteFooter">
+        <p>
+          Open-source project by{" "}
+          <a href="https://mallexibra.my.id/" target="_blank" rel="noreferrer">
+            Mallexibra
+          </a>
+        </p>
+        <a className="donationLink" href="https://saweria.co/mallexibra" target="_blank" rel="noreferrer">
+          <Coffee size={16} aria-hidden="true" />
+          Buy me a coffee
+        </a>
+      </footer>
     </main>
   );
 };

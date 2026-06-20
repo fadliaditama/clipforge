@@ -1,6 +1,14 @@
-# ClipForge
+# ClipForge Backend
 
-CLI lokal untuk membuat clip vertical 9:16 dari YouTube video berdasarkan transcript dan scoring sederhana.
+FastAPI service and CLI for generating vertical 9:16 clips from YouTube videos.
+
+Pipeline:
+
+1. Fetch metadata and download source video with `yt-dlp`.
+2. Extract mono 16 kHz audio with FFmpeg.
+3. Transcribe audio locally with `faster-whisper`.
+4. Score transcript windows into clip candidates.
+5. Export MP4 clips, SRT subtitles, and JSON metadata.
 
 ## Setup
 
@@ -9,7 +17,7 @@ py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-## Run
+## CLI
 
 ```powershell
 .\.venv\Scripts\python.exe clipper.py "https://youtu.be/RPTFTa8fgNs?si=TEDG1jDjGRgI9_Cz"
@@ -21,17 +29,18 @@ py -m venv .venv
 .\.venv\Scripts\python.exe -m uvicorn api:app --host 127.0.0.1 --port 8010
 ```
 
-API utama:
+Main API:
 
 ```text
 GET  /api/health
 POST /api/jobs
 GET  /api/jobs
 GET  /api/jobs/{job_id}
+DELETE /api/jobs
 GET  /outputs/<generated-file>
 ```
 
-Opsi yang sering dipakai:
+Common CLI options:
 
 ```powershell
 .\.venv\Scripts\python.exe clipper.py "URL" --top 5 --min 35 --max 180
@@ -43,7 +52,7 @@ Test cepat tanpa transcribe full video:
 .\.venv\Scripts\python.exe clipper.py "URL" --model Systran/faster-whisper-base --analyze-seconds 180 --top 1
 ```
 
-Output ada di:
+Output:
 
 ```text
 outputs/
@@ -67,8 +76,14 @@ Default output video:
 - transcript lokal via `Systran/faster-whisper-small`
 - durasi clip dinamis, maksimal 3 menit secara default
 
-Kalau laptop terasa berat, pakai model lebih kecil:
+If CPU feels too slow, use a smaller model:
 
 ```powershell
 .\.venv\Scripts\python.exe clipper.py "URL" --model Systran/faster-whisper-base
 ```
+
+## Notes
+
+- This service is local-first. Add auth, rate limiting, and quotas before public deployment.
+- Do not commit `outputs/`, `.env`, or `jobs.json`.
+- Process only videos you have rights or permission to use.

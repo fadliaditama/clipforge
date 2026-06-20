@@ -661,6 +661,61 @@ h2 {
   line-height: 1.6;
 }
 
+.siteFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 40px;
+  padding: 22px 0 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.siteFooter p {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.siteFooter svg {
+  color: var(--danger);
+}
+
+.siteFooter a {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.siteFooter a:hover {
+  color: var(--primary-hover);
+  text-decoration: underline;
+}
+
+.donationLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #FFFFFF;
+  box-shadow: var(--shadow-sm);
+}
+
+.donationLink svg {
+  color: #B45309;
+}
+
+.donationLink:hover {
+  border-color: #F59E0B;
+  background: #FFFBEB;
+  text-decoration: none;
+}
+
 .error {
   color: var(--danger);
   font-size: 13px;
@@ -798,5 +853,10 @@ h2 {
 
   .gridFields {
     grid-template-columns: 1fr;
+  }
+
+  .siteFooter {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

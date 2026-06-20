@@ -1,6 +1,6 @@
-# ClipForge frontend
+# ClipForge Frontend
 
-Next.js UI untuk menjalankan backend clipper lokal.
+Next.js UI for running the local ClipForge backend.
 
 ## Setup
 
@@ -23,8 +23,20 @@ Lalu jalankan frontend:
 npm run dev
 ```
 
-Buka:
+Open:
 
 ```text
 http://127.0.0.1:3000
 ```
+
+## Environment
+
+Copy `.env.example` when needed:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+`NEXT_PUBLIC_API_BASE` must point to the browser-accessible backend URL for generated video files.
+
+The app proxies API requests through `/api/[...path]`, using `BACKEND_API_BASE` on the server side.

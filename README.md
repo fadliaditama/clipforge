@@ -1,27 +1,46 @@
 # ClipForge
 
-ClipForge turns long YouTube videos into ready-to-post vertical clips with transcription, subtitles, and smart crop options.
+Local-first tool for turning long YouTube videos into ready-to-post vertical clips with transcription, burned-in subtitles, and smart crop options.
 
-## Docker
+## Overview
 
-Copy the Docker env example, then adjust the public backend URL for your server:
+![ClipForge overview](image.png)
+
+## Features
+
+- Download a single YouTube video with `yt-dlp`.
+- Transcribe locally with `faster-whisper`.
+- Score transcript windows for clip candidates.
+- Export vertical 9:16 MP4 clips with SRT files.
+- Burn subtitles into clips by default.
+- Crop center or shift crop toward detected faces/people.
+- Manage jobs and generated clips from a Next.js UI.
+- Run locally with Python/Node or with Docker Compose.
+
+## Requirements
+
+- Python 3.12+
+- Node.js 22+
+- npm
+- Network access for YouTube downloads and model downloads
+- Enough CPU, disk, and time for transcription and video encoding
+
+Docker users only need Docker and Docker Compose.
+
+## Quick Start With Docker
+
+Copy the Docker env example:
 
 ```powershell
 Copy-Item .env.docker.example .env
 ```
 
-For local Docker usage, the defaults are enough:
+For local Docker usage, defaults are enough:
 
 ```env
 FRONTEND_PORT=3000
 BACKEND_PORT=8010
 NEXT_PUBLIC_API_BASE=http://localhost:8010
-```
-
-On a server, `NEXT_PUBLIC_API_BASE` must be the browser-accessible backend URL, for example:
-
-```env
-NEXT_PUBLIC_API_BASE=https://api.your-domain.com
 ```
 
 Build and run:
@@ -30,7 +49,7 @@ Build and run:
 docker compose --env-file .env up -d --build
 ```
 
-Services:
+Open:
 
 ```text
 frontend: http://localhost:3000
@@ -43,3 +62,97 @@ Persistent local data:
 backend/outputs -> /app/outputs
 backend/jobs.json -> /app/jobs.json
 ```
+
+## Local Development
+
+Start backend:
+
+```powershell
+cd backend
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn api:app --host 127.0.0.1 --port 8010
+```
+
+Start frontend in another terminal:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:3000`.
+
+## CLI Usage
+
+The backend can also run without the UI:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe clipper.py "https://www.youtube.com/watch?v=..." --top 5 --min 35 --max 180
+```
+
+Quick test on the first 180 seconds:
+
+```powershell
+.\.venv\Scripts\python.exe clipper.py "https://www.youtube.com/watch?v=..." --model Systran/faster-whisper-base --analyze-seconds 180 --top 1
+```
+
+Outputs are written under `backend/outputs/`.
+
+## API
+
+```text
+GET    /api/health
+POST   /api/jobs
+GET    /api/jobs
+GET    /api/jobs/{job_id}
+DELETE /api/jobs
+GET    /outputs/<generated-file>
+```
+
+## Configuration
+
+For Docker/server deployments, `NEXT_PUBLIC_API_BASE` must be the browser-accessible backend URL:
+
+```env
+NEXT_PUBLIC_API_BASE=https://api.example.com
+```
+
+The frontend also uses `BACKEND_API_BASE` internally for proxying API requests in Docker:
+
+```env
+BACKEND_API_BASE=http://backend:8010
+```
+
+## Safety And Legal Notes
+
+ClipForge is intended for local workflows and content you are allowed to process. Make sure you have rights or permission to download, transform, and republish source videos. Follow YouTube terms and applicable copyright law.
+
+Do not expose the backend publicly without authentication, rate limits, request validation, quotas, and cleanup. The backend accepts URLs and runs expensive jobs.
+
+## Project Structure
+
+```text
+backend/
+  api.py                 FastAPI job API
+  clipper.py             download/transcribe/score/export pipeline
+  models/                optional crop detection model
+  outputs/               generated local files, ignored by git
+frontend/
+  app/                   Next.js app router UI
+  lib/apiClient.ts       API client helpers
+  types/clip.type.ts     shared frontend types
+docker-compose.yml       local two-service stack
+```
+
+## License
+
+MIT. See `LICENSE`.
+
+Third-party notices live in `NOTICE`.
+
+## Author
+
+Created by [mallexibra](https://mallexibra.my.id/).
