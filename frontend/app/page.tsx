@@ -12,7 +12,7 @@ import {
   RECENT_LOG_LIMIT,
 } from "../lib/constants";
 import { isActiveJob } from "../lib/utils";
-import type { ClipJob, CropMode } from "../types/clip.type";
+import type { AspectRatio, ClipJob, CropMode } from "../types/clip.type";
 import { ControlPanel } from "./_components/ControlPanel";
 import { DeleteAllToast } from "./_components/DeleteAllToast";
 import { HistorySection } from "./_components/HistorySection";
@@ -25,6 +25,7 @@ export default function HomePage() {
   const [url, setUrl] = useState("");
   const [minDuration, setMinDuration] = useState(DEFAULT_MIN_DURATION);
   const [maxDuration, setMaxDuration] = useState(DEFAULT_MAX_DURATION);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16");
   const [cropMode, setCropMode] = useState<CropMode>("person");
   const [job, setJob] = useState<ClipJob | null>(null);
   const [jobs, setJobs] = useState<ClipJob[]>([]);
@@ -78,6 +79,7 @@ export default function HomePage() {
           model: DEFAULT_MODEL,
           language: DEFAULT_LANGUAGE,
           burn_subtitles: true,
+          aspect_ratio: aspectRatio,
           crop_mode: cropMode,
         }),
         {
@@ -94,7 +96,7 @@ export default function HomePage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [cropMode, loadJobs, maxDuration, minDuration, url]);
+  }, [aspectRatio, cropMode, loadJobs, maxDuration, minDuration, url]);
 
   const handleDeleteAllConfirmed = useCallback(async () => {
     await toast.promise(deleteJobs(), {
@@ -119,12 +121,14 @@ export default function HomePage() {
 
       <section className="workspace">
         <ControlPanel
+          aspectRatio={aspectRatio}
           cropMode={cropMode}
           error={error}
           isBusy={isBusy}
           isSubmitting={isSubmitting}
           maxDuration={maxDuration}
           minDuration={minDuration}
+          onAspectRatioChange={setAspectRatio}
           onCropModeChange={setCropMode}
           onMaxDurationChange={setMaxDuration}
           onMinDurationChange={setMinDuration}

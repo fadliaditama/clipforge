@@ -40,6 +40,7 @@ class ClipJobRequest(BaseModel):
     language: str = "id"
     analyze_seconds: float | None = Field(default=None, ge=10, le=7200)
     burn_subtitles: bool = True
+    aspect_ratio: Literal["9:16", "16:9"] = "9:16"
     crop_mode: Literal["center", "person"] = "center"
 
 
@@ -246,6 +247,7 @@ def build_clipper_command(request: ClipJobRequest) -> list[str]:
         command.extend(["--analyze-seconds", str(request.analyze_seconds)])
     if not request.burn_subtitles:
         command.append("--no-burn-subtitles")
+    command.extend(["--aspect-ratio", request.aspect_ratio])
     command.extend(["--crop-mode", request.crop_mode])
     return command
 

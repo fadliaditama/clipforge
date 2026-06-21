@@ -249,7 +249,10 @@ def detect_person_focus_x(video_path: Path, clip: ClipCandidate) -> tuple[float,
         return None
 
 
-def vertical_crop_filter(video_path: Path, clip: ClipCandidate, crop_mode: CropMode) -> str:
+def video_filter(video_path: Path, clip: ClipCandidate, crop_mode: CropMode, aspect_ratio: str) -> str:
+    if aspect_ratio == "16:9":
+        return "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:-1:-1,setsar=1"
+
     center_filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1"
     if crop_mode == "center":
         return center_filter
@@ -592,6 +595,7 @@ def export_clip(
     clips_dir: Path,
     burn_subtitles: bool,
     crop_mode: CropMode,
+    aspect_ratio: str,
 ) -> Path:
     clips_dir.mkdir(parents=True, exist_ok=True)
     base_name = f"clip_{clip.index:02}_{slugify(clip.title)[:42] or 'auto'}"
@@ -605,7 +609,7 @@ def export_clip(
     write_srt(srt_path, clip_segments, clip.start, duration)
     save_json(json_path, asdict(clip))
 
-    vf = vertical_crop_filter(video_path, clip, crop_mode)
+    vf = video_filter(video_path, clip, crop_mode, aspect_ratio)
     if burn_subtitles and clip_segments:
         style = (
             "FontName=Arial,FontSize=5,PrimaryColour=&H00FFFFFF,"
@@ -758,6 +762,12 @@ def parse_args() -> argparse.Namespace:
         default="center",
         help="Use center crop or shift the vertical crop toward a detected person",
     )
+    parser.add_argument(
+        "--aspect-ratio",
+        choices=["9:16", "16:9"],
+        default="9:16",
+        help="Output aspect ratio",
+    )
     parser.add_argument("--force", action="store_true", help="Redo download, audio extraction, and transcription")
     return parser.parse_args()
 
@@ -821,7 +831,7 @@ def main() -> int:
             console.print("[red]No matching candidate indexes to export.[/red]")
             return 1
 
-    console.print("[bold]Exporting vertical clips...[/bold]")
+    console.print("[bold]Exporting clips...[/bold]")
     clips_dir = work_dir / "clips"
     exported: list[Path] = []
     for candidate in candidates:
@@ -834,6 +844,7 @@ def main() -> int:
                 clips_dir,
                 not args.no_burn_subtitles,
                 args.crop_mode,
+                args.aspect_ratio,
             )
         )
 

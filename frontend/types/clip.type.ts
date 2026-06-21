@@ -1,5 +1,6 @@
 export type JobStatus = "queued" | "running" | "completed" | "failed";
 export type CropMode = "center" | "person";
+export type AspectRatio = "9:16" | "16:9";
 
 export type ClipFile = {
   name: string;
@@ -37,6 +38,7 @@ export type ClipJob = {
     analyze_seconds: number | null;
     burn_subtitles: boolean;
     crop_mode: CropMode;
+    aspect_ratio: AspectRatio;
   };
 };
 
@@ -50,4 +52,5 @@ export type CreateClipJobInput = {
   analyze_seconds?: number | null;
   burn_subtitles: boolean;
   crop_mode: CropMode;
+  aspect_ratio: AspectRatio;
 };

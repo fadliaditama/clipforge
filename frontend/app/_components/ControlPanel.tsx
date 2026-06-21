@@ -1,7 +1,8 @@
 import { Loader2, Play, Scissors } from "lucide-react";
-import type { CropMode } from "../../types/clip.type";
+import type { AspectRatio, CropMode } from "../../types/clip.type";
 
 type ControlPanelProps = {
+  aspectRatio: AspectRatio;
   cropMode: CropMode;
   error: string;
   isBusy: boolean;
@@ -9,6 +10,7 @@ type ControlPanelProps = {
   maxDuration: number;
   minDuration: number;
   onCropModeChange: (mode: CropMode) => void;
+  onAspectRatioChange: (ratio: AspectRatio) => void;
   onMaxDurationChange: (value: number) => void;
   onMinDurationChange: (value: number) => void;
   onStartJob: () => void;
@@ -17,12 +19,14 @@ type ControlPanelProps = {
 };
 
 export function ControlPanel({
+  aspectRatio,
   cropMode,
   error,
   isBusy,
   isSubmitting,
   maxDuration,
   minDuration,
+  onAspectRatioChange,
   onCropModeChange,
   onMaxDurationChange,
   onMinDurationChange,
@@ -74,23 +78,47 @@ export function ControlPanel({
         </label>
       </div>
 
-      <div className="segmentedField">
-        <span>Mode Crop</span>
-        <div className="segmentedControl" role="group" aria-label="Mode crop video">
-          <button
-            className={cropMode === "center" ? "active" : ""}
-            type="button"
-            onClick={() => onCropModeChange("center")}
-          >
-            Center
-          </button>
-          <button
-            className={cropMode === "person" ? "active" : ""}
-            type="button"
-            onClick={() => onCropModeChange("person")}
-          >
-            Follow Person
-          </button>
+      <div className="gridFields">
+        <div className="segmentedField">
+          <span>Rasio Aspek</span>
+          <div className="segmentedControl" role="group" aria-label="Rasio aspek output">
+            <button
+              className={aspectRatio === "9:16" ? "active" : ""}
+              type="button"
+              onClick={() => onAspectRatioChange("9:16")}
+            >
+              9:16 (Vertikal)
+            </button>
+            <button
+              className={aspectRatio === "16:9" ? "active" : ""}
+              type="button"
+              onClick={() => onAspectRatioChange("16:9")}
+            >
+              16:9 (Horizontal)
+            </button>
+          </div>
+        </div>
+
+        <div className="segmentedField">
+          <span>Mode Crop (Khusus Vertikal)</span>
+          <div className="segmentedControl" role="group" aria-label="Mode crop video">
+            <button
+              className={cropMode === "center" ? "active" : ""}
+              type="button"
+              disabled={aspectRatio === "16:9"}
+              onClick={() => onCropModeChange("center")}
+            >
+              Center
+            </button>
+            <button
+              className={cropMode === "person" ? "active" : ""}
+              type="button"
+              disabled={aspectRatio === "16:9"}
+              onClick={() => onCropModeChange("person")}
+            >
+              Follow Person
+            </button>
+          </div>
         </div>
       </div>
 
